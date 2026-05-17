@@ -1,0 +1,264 @@
+const express = require('express');
+const path = require('path');
+const cors = require('cors');
+require('dotenv').config();
+const { connectDB } = require('./db');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Connect to Database
+connectDB();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Serve static files from root
+// To avoid serving sensitive files, we can serve specific files or use a specific middleware
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.get('/style.css', (req, res) => {
+    res.sendFile(path.join(__dirname, 'style.css'));
+});
+
+app.get('/app.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'app.js'));
+});
+
+app.get('/mapStyles.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'mapStyles.js'));
+});
+
+// API endpoint to verify connection (demo)
+app.get('/api/status', (req, res) => {
+    res.json({ status: 'Server is running', db_connected: true });
+});
+
+// API endpoint to register a new user
+app.post('/api/usuarios', async (req, res) => {
+    const { nombre, correo, contrasena } = req.body;
+
+    if (!nombre || !correo || !contrasena) {
+        return res.status(400).json({ error: 'Todos los campos (nombre, correo, contrasena) son obligatorios.' });
+    }
+
+    try {
+        const { sql } = require('./db');
+
+        // 1. Check if the email already exists in the database
+        const checkEmailRequest = new sql.Request();
+        checkEmailRequest.input('correo', sql.VarChar, correo);
+        const emailResult = await checkEmailRequest.query('SELECT id_usuario FROM usuarios WHERE correo = @correo');
+
+        if (emailResult.recordset.length > 0) {
+            return res.status(400).json({ error: 'El correo electrónico ya está registrado.' });
+        }
+
+        // 2. Hash the password using crypto (SHA-256)
+        const crypto = require('crypto');
+        const hashedPassword = crypto.createHash('sha256').update(contrasena).digest('hex');
+
+        // 3. Insert the new user into the database
+        const insertRequest = new sql.Request();
+        insertRequest.input('nombre', sql.VarChar, nombre);
+        insertRequest.input('correo', sql.VarChar, correo);
+        insertRequest.input('contrasena_hash', sql.VarChar, hashedPassword);
+
+        await insertRequest.query(
+            'INSERT INTO usuarios (nombre, correo, contraseña_hash) VALUES (@nombre, @correo, @contrasena_hash)'
+        );
+
+        res.status(201).json({ message: 'Usuario creado exitosamente.' });
+    } catch (error) {
+        console.error('Error al registrar usuario:', error);
+        res.status(500).json({ error: 'Hubo un problema al registrar el usuario en el servidor.' });
+    }
+});
+
+// API endpoint to log in an existing user
+app.post('/api/login', async (req, res) => {
+    const { correo, contrasena } = req.body;
+
+    if (!correo || !contrasena) {
+        return res.status(400).json({ error: 'El correo y la contraseña son obligatorios.' });
+    }
+
+    try {
+        const { sql } = require('./db');
+
+        // 1. Find user by email
+        const findRequest = new sql.Request();
+        findRequest.input('correo', sql.VarChar, correo);
+        const result = await findRequest.query('SELECT id_usuario, nombre, correo, contraseña_hash FROM usuarios WHERE correo = @correo');
+
+        if (result.recordset.length === 0) {
+            // Keep error message generic for security
+            return res.status(401).json({ error: 'El correo electrónico o la contraseña son incorrectos.' });
+        }
+
+        const user = result.recordset[0];
+
+        // 2. Hash incoming password and compare
+        const crypto = require('crypto');
+        const hashedPassword = crypto.createHash('sha256').update(contrasena).digest('hex');
+
+        if (hashedPassword !== user.contraseña_hash) {
+            return res.status(401).json({ error: 'El correo electrónico o la contraseña son incorrectos.' });
+        }
+
+        // 3. Success response (exclude hash!)
+        res.status(200).json({
+            message: 'Inicio de sesión exitoso.',
+            usuario: {
+                id_usuario: user.id_usuario,
+                nombre: user.nombre,
+                correo: user.correo
+            }
+        });
+    } catch (error) {
+        console.error('Error al iniciar sesión:', error);
+        res.status(500).json({ error: 'Hubo un problema al iniciar sesión en el servidor.' });
+    }
+});
+
+// --- CATEGORIES ENDPOINT ---
+// GET /api/categorias
+app.get('/api/categorias', async (req, res) => {
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        const result = await request.query('SELECT id_categoria, nombre_categoria, icono FROM categorias');
+        res.status(200).json(result.recordset);
+    } catch (error) {
+        console.error('Error fetching categories:', error);
+        res.status(500).json({ error: 'Error fetching categories' });
+    }
+});
+
+// --- MARKERS ENDPOINTS ---
+// GET /api/marcadores
+app.get('/api/marcadores', async (req, res) => {
+    const { id_usuario } = req.query;
+    if (!id_usuario) {
+        return res.status(400).json({ error: 'id_usuario is required' });
+    }
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_usuario', sql.Int, id_usuario);
+        const result = await request.query(`
+            SELECT m.id_marcador, m.titulo, m.descripcion, m.latitud, m.longitud, m.fecha_creacion, m.id_categoria, c.nombre_categoria, c.icono
+            FROM marcadores m
+            JOIN categorias c ON m.id_categoria = c.id_categoria
+            WHERE m.id_usuario = @id_usuario
+        `);
+        res.status(200).json(result.recordset);
+    } catch (error) {
+        console.error('Error fetching markers:', error);
+        res.status(500).json({ error: 'Error fetching markers' });
+    }
+});
+
+// POST /api/marcadores
+app.post('/api/marcadores', async (req, res) => {
+    const { titulo, descripcion, latitud, longitud, id_usuario, id_categoria } = req.body;
+    if (!titulo || latitud === undefined || longitud === undefined || !id_usuario || !id_categoria) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('titulo', sql.VarChar, titulo);
+        request.input('descripcion', sql.Text, descripcion || null);
+        request.input('latitud', sql.Decimal(10, 7), latitud);
+        request.input('longitud', sql.Decimal(10, 7), longitud);
+        request.input('id_usuario', sql.Int, id_usuario);
+        request.input('id_categoria', sql.Int, id_categoria);
+
+        const result = await request.query(`
+            INSERT INTO marcadores (titulo, descripcion, latitud, longitud, id_usuario, id_categoria)
+            OUTPUT inserted.id_marcador
+            VALUES (@titulo, @descripcion, @latitud, @longitud, @id_usuario, @id_categoria)
+        `);
+
+        res.status(201).json({ message: 'Marker created', id_marcador: result.recordset[0].id_marcador });
+    } catch (error) {
+        console.error('Error creating marker:', error);
+        res.status(500).json({ error: 'Error creating marker' });
+    }
+});
+
+// PUT /api/marcadores/:id
+app.put('/api/marcadores/:id', async (req, res) => {
+    const id_marcador = req.params.id;
+    const { titulo, descripcion, id_categoria, id_usuario } = req.body;
+
+    if (!titulo || !id_categoria || !id_usuario) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_marcador', sql.Int, id_marcador);
+        request.input('titulo', sql.VarChar, titulo);
+        request.input('descripcion', sql.Text, descripcion || null);
+        request.input('id_categoria', sql.Int, id_categoria);
+        request.input('id_usuario', sql.Int, id_usuario);
+
+        const result = await request.query(`
+            UPDATE marcadores
+            SET titulo = @titulo, descripcion = @descripcion, id_categoria = @id_categoria
+            WHERE id_marcador = @id_marcador AND id_usuario = @id_usuario
+        `);
+
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({ error: 'Marker not found or unauthorized' });
+        }
+
+        res.status(200).json({ message: 'Marker updated' });
+    } catch (error) {
+        console.error('Error updating marker:', error);
+        res.status(500).json({ error: 'Error updating marker' });
+    }
+});
+
+// DELETE /api/marcadores/:id
+app.delete('/api/marcadores/:id', async (req, res) => {
+    const id_marcador = req.params.id;
+    const id_usuario = req.query.id_usuario || req.body.id_usuario;
+
+    if (!id_usuario) {
+        return res.status(400).json({ error: 'id_usuario is required' });
+    }
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_marcador', sql.Int, id_marcador);
+        request.input('id_usuario', sql.Int, id_usuario);
+
+        const result = await request.query(`
+            DELETE FROM marcadores
+            WHERE id_marcador = @id_marcador AND id_usuario = @id_usuario
+        `);
+
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({ error: 'Marker not found or unauthorized' });
+        }
+
+        res.status(200).json({ message: 'Marker deleted' });
+    } catch (error) {
+        console.error('Error deleting marker:', error);
+        res.status(500).json({ error: 'Error deleting marker' });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+});

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To Do In?... | Geolocalización Interactiva</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <header>
+        <div class="logo">
+            <h1>To Do In?...</h1>
+            <p>Descubre y registra tus puntos de interés</p>
+        </div>
+        <nav id="nav-container">
+            <button id="btn-register" class="btn-secondary">Registrarse</button>
+            <button id="btn-login" class="btn-primary">Iniciar Sesión</button>
+        </nav>
+    </header>
+
+    <main>
+        <div id="map-container">
+            <div id="map"></div>
+            <div class="map-overlay">
+                <div class="stats-panel">
+                    <h3>Mis Marcadores</h3>
+                    <p id="marker-count">0 marcadores registrados</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 To Do In?... - Geolocalización Inteligente</p>
+    </footer>
+
+    <!-- Register User Modal (Premium Glassmorphic Design) -->
+    <div id="register-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <button id="close-modal-btn" class="close-btn">&times;</button>
+            <div class="modal-header">
+                <h2>Crear Cuenta</h2>
+                <p>Regístrate para guardar tus marcadores y descubrir nuevos lugares.</p>
+            </div>
+            <form id="register-form" class="modal-form">
+                <div class="form-group">
+                    <label for="reg-nombre">Nombre Completo</label>
+                    <input type="text" id="reg-nombre" placeholder="Ingresa tu nombre completo" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="reg-correo">Correo Electrónico</label>
+                    <input type="email" id="reg-correo" placeholder="ejemplo@correo.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="reg-contrasena">Contraseña</label>
+                    <input type="password" id="reg-contrasena" placeholder="Crea una contraseña segura" required autocomplete="new-password">
+                </div>
+                <div id="register-message" class="form-message hidden"></div>
+                <button type="submit" id="btn-submit-register" class="btn-submit">
+                    <span>Registrarse</span>
+                    <div class="btn-loader hidden"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login User Modal (Premium Glassmorphic Design) -->
+    <div id="login-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <button id="close-login-modal-btn" class="close-btn">&times;</button>
+            <div class="modal-header">
+                <h2>Iniciar Sesión</h2>
+                <p>Ingresa a tu cuenta para ver tus marcadores y sincronizar tus lugares.</p>
+            </div>
+            <form id="login-form" class="modal-form">
+                <div class="form-group">
+                    <label for="login-correo">Correo Electrónico</label>
+                    <input type="email" id="login-correo" placeholder="ejemplo@correo.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="login-contrasena">Contraseña</label>
+                    <input type="password" id="login-contrasena" placeholder="Ingresa tu contraseña" required autocomplete="current-password">
+                </div>
+                <div id="login-message" class="form-message hidden"></div>
+                <button type="submit" id="btn-submit-login" class="btn-submit">
+                    <span>Iniciar Sesión</span>
+                    <div class="btn-loader hidden"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create Marker Modal -->
+    <div id="create-marker-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <button id="close-create-marker-btn" class="close-btn">&times;</button>
+            <div class="modal-header">
+                <h2>Guardar Ubicación</h2>
+                <p>Añade un título y una descripción a este nuevo lugar.</p>
+            </div>
+            <form id="create-marker-form" class="modal-form">
+                <div class="form-group">
+                    <label for="marker-title">Título del lugar</label>
+                    <input type="text" id="marker-title" placeholder="Ej: Restaurante favorito" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="marker-category">Categoría</label>
+                    <select id="marker-category" required>
+                        <option value="" disabled selected>Cargando categorías...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="marker-desc">Descripción</label>
+                    <textarea id="marker-desc" rows="3" placeholder="Detalles o notas sobre este lugar..." autocomplete="off"></textarea>
+                </div>
+                <div id="create-marker-message" class="form-message hidden"></div>
+                <button type="submit" id="btn-submit-marker" class="btn-submit">
+                    <span>Guardar Marcador</span>
+                    <div class="btn-loader hidden"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit/Delete Marker Modal -->
+    <div id="edit-marker-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <button id="close-edit-marker-btn" class="close-btn">&times;</button>
+            <div class="modal-header">
+                <h2>Editar Marcador</h2>
+                <p>Modifica los detalles o elimina este marcador de tu lista.</p>
+            </div>
+            <form id="edit-marker-form" class="modal-form">
+                <input type="hidden" id="edit-marker-id">
+                <div class="form-group">
+                    <label for="edit-marker-title">Título del lugar</label>
+                    <input type="text" id="edit-marker-title" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="edit-marker-category">Categoría</label>
+                    <select id="edit-marker-category" required>
+                        <!-- Options populated via JS -->
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="edit-marker-desc">Descripción</label>
+                    <textarea id="edit-marker-desc" rows="3" autocomplete="off"></textarea>
+                </div>
+                <div id="edit-marker-message" class="form-message hidden"></div>
+                <button type="submit" id="btn-submit-edit" class="btn-submit">
+                    <span>Actualizar Marcador</span>
+                    <div class="btn-loader hidden"></div>
+                </button>
+                <button type="button" id="btn-delete-marker" class="btn-delete mt-2">
+                    Eliminar Marcador
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCeLBKixUfmasreREcsVJeJJvONET0J6DQ&callback=initMap"
+        async defer></script>
+    <script src="mapStyles.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
