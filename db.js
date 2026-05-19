@@ -1,7 +1,20 @@
 const sql = require('mssql');
 require('dotenv').config();
 
-const config = process.env.DATABASE_URL;
+const config = {
+    server: process.env.AZURE_SQL_SERVER,
+    database: process.env.AZURE_SQL_DATABASE,
+    port: process.env.AZURE_SQL_PORT,
+
+    authentication: {
+        type: process.env.AZURE_SQL_AUTHENTICATIONTYPE
+    },
+
+    options: {
+        encrypt: true,
+        trustServerCertificate: false
+    }
+};
 
 const connectDB = async () => {
     try {
