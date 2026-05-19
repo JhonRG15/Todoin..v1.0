@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 require('dotenv').config();
-const { connectDB } = require('./db');
+const { connectDB, checkConnection } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,9 +32,10 @@ app.get('/mapStyles.js', (req, res) => {
     res.sendFile(path.join(__dirname, 'mapStyles.js'));
 });
 
-// API endpoint to verify connection (demo)
-app.get('/api/status', (req, res) => {
-    res.json({ status: 'Server is running', db_connected: true });
+// API endpoint to verify connection
+app.get('/api/status', async (req, res) => {
+    const isConnected = await checkConnection();
+    res.json({ status: 'Server is running', db_connected: isConnected });
 });
 
 // API endpoint to register a new user

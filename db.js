@@ -12,7 +12,17 @@ const connectDB = async () => {
     }
 };
 
+const checkConnection = async () => {
+    try {
+        await new sql.Request().query('SELECT 1');
+        return true;
+    } catch (err) {
+        return false;
+    }
+};
+
 module.exports = {
     sql,
-    connectDB
+    connectDB,
+    checkConnection
 };
