@@ -6,9 +6,9 @@ const config = process.env.DATABASE_URL;
 const connectDB = async () => {
     try {
         await sql.connect(config);
-        alert('✅ Connected to Azure SQL Database');
+        console.log('✅ Connected to Azure SQL Database');
     } catch (err) {
-        alert('❌ Database connection failed:', err.message);
+        console.log('❌ Database connection failed:', err.message);
     }
 };
 
