@@ -1,47 +1,49 @@
+// Importación de módulos requeridos
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
-require('dotenv').config();
+require('dotenv').config(); // Cargar variables de entorno del archivo .env
 const { connectDB, checkConnection } = require('./db');
 
+// Inicialización de la aplicación Express
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Connect to Database
+// Conexión inicial a la base de datos Azure SQL
 connectDB();
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Configuración de Middlewares globales
+app.use(cors()); // Habilitar peticiones CORS
+app.use(express.json()); // Habilitar parseo automático de cuerpos JSON
 
-// Serve static files from root
-// To avoid serving sensitive files, we can serve specific files or use a specific middleware
+// Rutas para servir archivos estáticos del frontend
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html')); // Página principal
 });
 
 app.get('/style.css', (req, res) => {
-    res.sendFile(path.join(__dirname, 'style.css'));
+    res.sendFile(path.join(__dirname, 'style.css')); // Archivo de estilos
 });
 
 app.get('/app.js', (req, res) => {
-    res.sendFile(path.join(__dirname, 'app.js'));
+    res.sendFile(path.join(__dirname, 'app.js')); // Lógica JS del cliente
 });
 
 app.get('/mapStyles.js', (req, res) => {
-    res.sendFile(path.join(__dirname, 'mapStyles.js'));
+    res.sendFile(path.join(__dirname, 'mapStyles.js')); // Estilos personalizados de Google Maps
 });
 
-// API endpoint to verify connection
+// Endpoint de utilidad para verificar el estado de la base de datos y servidor
 app.get('/api/status', async (req, res) => {
     const isConnected = await checkConnection();
     res.json({ status: 'Server is running', db_connected: isConnected });
 });
 
-// API endpoint to register a new user
+// Endpoint para registrar un nuevo usuario
 app.post('/api/usuarios', async (req, res) => {
     const { nombre, correo, contrasena } = req.body;
 
+    // Validación básica de campos obligatorios
     if (!nombre || !correo || !contrasena) {
         return res.status(400).json({ error: 'Todos los campos (nombre, correo, contrasena) son obligatorios.' });
     }
@@ -49,7 +51,7 @@ app.post('/api/usuarios', async (req, res) => {
     try {
         const { sql } = require('./db');
 
-        // 1. Check if the email already exists in the database
+        // 1. Verificar si el correo ya existe en la base de datos
         const checkEmailRequest = new sql.Request();
         checkEmailRequest.input('correo', sql.VarChar, correo);
         const emailResult = await checkEmailRequest.query('SELECT id_usuario FROM usuarios WHERE correo = @correo');
@@ -58,11 +60,11 @@ app.post('/api/usuarios', async (req, res) => {
             return res.status(400).json({ error: 'El correo electrónico ya está registrado.' });
         }
 
-        // 2. Hash the password using crypto (SHA-256)
+        // 2. Hashear la contraseña usando la librería nativa crypto (algoritmo SHA-256)
         const crypto = require('crypto');
         const hashedPassword = crypto.createHash('sha256').update(contrasena).digest('hex');
 
-        // 3. Insert the new user into the database
+        // 3. Insertar el nuevo registro de usuario en la base de datos
         const insertRequest = new sql.Request();
         insertRequest.input('nombre', sql.VarChar, nombre);
         insertRequest.input('correo', sql.VarChar, correo);
@@ -79,10 +81,11 @@ app.post('/api/usuarios', async (req, res) => {
     }
 });
 
-// API endpoint to log in an existing user
+// Endpoint para iniciar sesión
 app.post('/api/login', async (req, res) => {
     const { correo, contrasena } = req.body;
 
+    // Validación básica de campos
     if (!correo || !contrasena) {
         return res.status(400).json({ error: 'El correo y la contraseña son obligatorios.' });
     }
@@ -90,19 +93,19 @@ app.post('/api/login', async (req, res) => {
     try {
         const { sql } = require('./db');
 
-        // 1. Find user by email
+        // 1. Buscar el usuario por su dirección de correo electrónico
         const findRequest = new sql.Request();
         findRequest.input('correo', sql.VarChar, correo);
         const result = await findRequest.query('SELECT id_usuario, nombre, correo, contraseña_hash FROM usuarios WHERE correo = @correo');
 
         if (result.recordset.length === 0) {
-            // Keep error message generic for security
+            // Mensaje de error genérico por razones de seguridad
             return res.status(401).json({ error: 'El correo electrónico o la contraseña son incorrectos.' });
         }
 
         const user = result.recordset[0];
 
-        // 2. Hash incoming password and compare
+        // 2. Hashear la contraseña ingresada y compararla con el hash de la BD
         const crypto = require('crypto');
         const hashedPassword = crypto.createHash('sha256').update(contrasena).digest('hex');
 
@@ -110,7 +113,7 @@ app.post('/api/login', async (req, res) => {
             return res.status(401).json({ error: 'El correo electrónico o la contraseña son incorrectos.' });
         }
 
-        // 3. Success response (exclude hash!)
+        // 3. Respuesta exitosa omitiendo exponer el hash de la contraseña
         res.status(200).json({
             message: 'Inicio de sesión exitoso.',
             usuario: {
@@ -125,8 +128,9 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// --- CATEGORIES ENDPOINT ---
-// GET /api/categorias
+// --- ENDPOINTS PARA CATEGORÍAS ---
+
+// Obtener todas las categorías para marcadores
 app.get('/api/categorias', async (req, res) => {
     try {
         const { sql } = require('./db');
@@ -139,8 +143,9 @@ app.get('/api/categorias', async (req, res) => {
     }
 });
 
-// --- MARKERS ENDPOINTS ---
-// GET /api/marcadores
+// --- ENDPOINTS PARA MARCADORES (CRUD) ---
+
+// Obtener todos los marcadores creados por un usuario específico
 app.get('/api/marcadores', async (req, res) => {
     const { id_usuario } = req.query;
     if (!id_usuario) {
@@ -151,6 +156,7 @@ app.get('/api/marcadores', async (req, res) => {
         const { sql } = require('./db');
         const request = new sql.Request();
         request.input('id_usuario', sql.Int, id_usuario);
+        // Trae los marcadores vinculando la categoría correspondiente
         const result = await request.query(`
             SELECT m.id_marcador, m.titulo, m.descripcion, m.latitud, m.longitud, m.fecha_creacion, m.id_categoria, c.nombre_categoria, c.icono
             FROM marcadores m
@@ -164,7 +170,7 @@ app.get('/api/marcadores', async (req, res) => {
     }
 });
 
-// POST /api/marcadores
+// Crear un nuevo marcador
 app.post('/api/marcadores', async (req, res) => {
     const { titulo, descripcion, latitud, longitud, id_usuario, id_categoria } = req.body;
     if (!titulo || latitud === undefined || longitud === undefined || !id_usuario || !id_categoria) {
@@ -181,6 +187,7 @@ app.post('/api/marcadores', async (req, res) => {
         request.input('id_usuario', sql.Int, id_usuario);
         request.input('id_categoria', sql.Int, id_categoria);
 
+        // Inserta y recupera el ID generado
         const result = await request.query(`
             INSERT INTO marcadores (titulo, descripcion, latitud, longitud, id_usuario, id_categoria)
             OUTPUT inserted.id_marcador
@@ -194,7 +201,7 @@ app.post('/api/marcadores', async (req, res) => {
     }
 });
 
-// PUT /api/marcadores/:id
+// Actualizar datos de un marcador
 app.put('/api/marcadores/:id', async (req, res) => {
     const id_marcador = req.params.id;
     const { titulo, descripcion, id_categoria, id_usuario } = req.body;
@@ -212,6 +219,7 @@ app.put('/api/marcadores/:id', async (req, res) => {
         request.input('id_categoria', sql.Int, id_categoria);
         request.input('id_usuario', sql.Int, id_usuario);
 
+        // Actualiza solo si pertenece al usuario que realiza la petición
         const result = await request.query(`
             UPDATE marcadores
             SET titulo = @titulo, descripcion = @descripcion, id_categoria = @id_categoria
@@ -229,7 +237,7 @@ app.put('/api/marcadores/:id', async (req, res) => {
     }
 });
 
-// DELETE /api/marcadores/:id
+// Eliminar un marcador
 app.delete('/api/marcadores/:id', async (req, res) => {
     const id_marcador = req.params.id;
     const id_usuario = req.query.id_usuario || req.body.id_usuario;
@@ -244,6 +252,7 @@ app.delete('/api/marcadores/:id', async (req, res) => {
         request.input('id_marcador', sql.Int, id_marcador);
         request.input('id_usuario', sql.Int, id_usuario);
 
+        // Elimina solo si pertenece al usuario solicitante
         const result = await request.query(`
             DELETE FROM marcadores
             WHERE id_marcador = @id_marcador AND id_usuario = @id_usuario
@@ -260,9 +269,9 @@ app.delete('/api/marcadores/:id', async (req, res) => {
     }
 });
 
-// --- FRIENDS ENDPOINTS ---
+// --- ENDPOINTS PARA EL SISTEMA DE AMIGOS Y SOCIAL ---
 
-// GET /api/usuarios/buscar
+// Buscar usuarios para agregar como amigos
 app.get('/api/usuarios/buscar', async (req, res) => {
     const { query, id_usuario } = req.query;
     if (!query || !id_usuario) return res.status(400).json({ error: 'Faltan parámetros' });
@@ -273,6 +282,7 @@ app.get('/api/usuarios/buscar', async (req, res) => {
         request.input('query', sql.VarChar, `%${query}%`);
         request.input('id_usuario', sql.Int, id_usuario);
 
+        // Busca usuarios coincidentes excluyendo al propio usuario y a los que ya tienen relación
         const result = await request.query(`
             SELECT id_usuario, nombre, correo 
             FROM usuarios 
@@ -291,7 +301,7 @@ app.get('/api/usuarios/buscar', async (req, res) => {
     }
 });
 
-// POST /api/amigos/solicitar
+// Enviar solicitud de amistad a otro usuario
 app.post('/api/amigos/solicitar', async (req, res) => {
     const { id_usuario_envia, id_usuario_recibe } = req.body;
     if (!id_usuario_envia || !id_usuario_recibe) return res.status(400).json({ error: 'Faltan parámetros' });
@@ -302,6 +312,7 @@ app.post('/api/amigos/solicitar', async (req, res) => {
         request.input('envia', sql.Int, id_usuario_envia);
         request.input('recibe', sql.Int, id_usuario_recibe);
 
+        // Inserta la relación con estado 'pendiente'
         await request.query(`
             INSERT INTO amigos (id_usuario_envia, id_usuario_recibe, estado)
             VALUES (@envia, @recibe, 'pendiente')
@@ -313,7 +324,7 @@ app.post('/api/amigos/solicitar', async (req, res) => {
     }
 });
 
-// GET /api/amigos/solicitudes
+// Obtener todas las solicitudes de amistad pendientes recibidas por el usuario
 app.get('/api/amigos/solicitudes', async (req, res) => {
     const { id_usuario } = req.query;
     if (!id_usuario) return res.status(400).json({ error: 'Falta id_usuario' });
@@ -336,7 +347,7 @@ app.get('/api/amigos/solicitudes', async (req, res) => {
     }
 });
 
-// PUT /api/amigos/responder
+// Aceptar o rechazar una solicitud de amistad
 app.put('/api/amigos/responder', async (req, res) => {
     const { id_solicitud, accion } = req.body; // accion: 'aceptar' o 'rechazar'
     if (!id_solicitud || !accion) return res.status(400).json({ error: 'Faltan parámetros' });
@@ -347,9 +358,11 @@ app.put('/api/amigos/responder', async (req, res) => {
         request.input('id_solicitud', sql.Int, id_solicitud);
 
         if (accion === 'aceptar') {
+            // Actualiza a estado 'aceptada'
             await request.query(`UPDATE amigos SET estado = 'aceptada' WHERE id_solicitud = @id_solicitud`);
             res.status(200).json({ message: 'Solicitud aceptada' });
         } else if (accion === 'rechazar') {
+            // Elimina la fila de la relación en caso de rechazo
             await request.query(`DELETE FROM amigos WHERE id_solicitud = @id_solicitud`);
             res.status(200).json({ message: 'Solicitud rechazada' });
         } else {
@@ -361,7 +374,7 @@ app.put('/api/amigos/responder', async (req, res) => {
     }
 });
 
-// GET /api/amigos
+// Obtener la lista de amigos aceptados de un usuario
 app.get('/api/amigos', async (req, res) => {
     const { id_usuario } = req.query;
     if (!id_usuario) return res.status(400).json({ error: 'Falta id_usuario' });
@@ -371,6 +384,7 @@ app.get('/api/amigos', async (req, res) => {
         const request = new sql.Request();
         request.input('id_usuario', sql.Int, id_usuario);
 
+        // Busca registros de amistad aceptada donde el usuario participe (como remitente o destinatario)
         const result = await request.query(`
             SELECT u.id_usuario, u.nombre, u.correo
             FROM amigos a
@@ -386,7 +400,7 @@ app.get('/api/amigos', async (req, res) => {
     }
 });
 
-// GET /api/amigos/marcadores
+// Obtener los marcadores del mapa de un amigo
 app.get('/api/amigos/marcadores', async (req, res) => {
     const { id_usuario, id_amigo } = req.query;
     if (!id_usuario || !id_amigo) return res.status(400).json({ error: 'Faltan parámetros' });
@@ -397,6 +411,7 @@ app.get('/api/amigos/marcadores', async (req, res) => {
         request.input('id_usuario', sql.Int, id_usuario);
         request.input('id_amigo', sql.Int, id_amigo);
 
+        // 1. Validar que exista una relación de amistad activa y aceptada
         const checkFriend = await request.query(`
             SELECT 1 FROM amigos 
             WHERE estado = 'aceptada' AND 
@@ -408,6 +423,7 @@ app.get('/api/amigos/marcadores', async (req, res) => {
             return res.status(403).json({ error: 'No tienes permiso para ver estos marcadores' });
         }
 
+        // 2. Si son amigos, retornar los marcadores del amigo solicitado
         const result = await request.query(`
             SELECT m.id_marcador, m.titulo, m.descripcion, m.latitud, m.longitud, m.fecha_creacion, m.id_categoria, c.nombre_categoria, c.icono
             FROM marcadores m
@@ -421,6 +437,7 @@ app.get('/api/amigos/marcadores', async (req, res) => {
     }
 });
 
+// Inicialización del servidor Express en el puerto configurado
 app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

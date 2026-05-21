@@ -1,31 +1,65 @@
-let map;
-let markersOnMap = []; // Array of Google Maps marker objects
-let currentSessionUser = null;
+// Variables globales de la aplicación
+let map;                             // Instancia de Google Maps
+let markersOnMap = [];               // Arreglo de marcadores de Google Maps cargados en pantalla
+let currentSessionUser = null;       // Datos del usuario con sesión activa
+let isViewingFriendMap = false;      // Bandera para controlar si se está visualizando el mapa de un amigo (deshabilita la creación de marcadores)
 
-// Temporary variable to hold map click location before marker is created
+// Variable temporal para almacenar las coordenadas del último clic en el mapa antes de crear el marcador
 let pendingMarkerLocation = null;
-let categories = [];
+let categories = [];                 // Listado de categorías disponibles de marcadores
+
+/**
+ * Muestra un modal de alerta personalizado reemplazando al alert() del navegador.
+ * @param {string} message Mensaje a mostrar en la alerta.
+ * @param {string} title Título del modal de la alerta (opcional).
+ */
+function showCustomAlert(message, title = "Notificación") {
+    const alertModal = document.getElementById("custom-alert-modal");
+    const alertTitle = document.getElementById("custom-alert-title");
+    const alertMessage = document.getElementById("custom-alert-message");
+    
+    if (alertModal && alertMessage) {
+        if (alertTitle) alertTitle.textContent = title;
+        alertMessage.textContent = message;
+        alertModal.classList.remove("hidden");
+    }
+}
+window.showCustomAlert = showCustomAlert;
 
 // ==========================================
 // GOOGLE MAPS INIT & LOGIC
 // ==========================================
+// ==========================================
+// INICIALIZACIÓN Y CONFIGURACIÓN DE GOOGLE MAPS
+// ==========================================
 function initMap() {
     console.log("Initializing Map...");
-    const defaultLocation = { lat: 4.6097, lng: -74.0817 }; // Bogotá
+    const defaultLocation = { lat: 4.6097, lng: -74.0817 }; // Ubicación por defecto: Bogotá
 
+    // Creación de la instancia del mapa con estilos oscuros y controles desactivados/activados
     map = new google.maps.Map(document.getElementById("map"), {
         center: defaultLocation,
         zoom: 12,
         styles: typeof mapStyles !== 'undefined' ? mapStyles : [],
         disableDefaultUI: false,
         zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false
     });
 
+    // Evento de clic en el mapa para ubicar un marcador
     map.addListener("click", (event) => {
+        // Bloqueo si el usuario no ha iniciado sesión
         if (!currentSessionUser) {
-            alert("Debes iniciar sesión para crear marcadores.");
+            showCustomAlert("Debes iniciar sesión para crear marcadores.");
             return;
         }
+        // Bloqueo si se está visualizando el mapa de un amigo (solo lectura)
+        if (isViewingFriendMap) {
+            showCustomAlert("No puedes añadir marcadores en el mapa de un amigo.");
+            return;
+        }
+        // Almacenar coordenadas de forma temporal y abrir formulario modal para completar datos
         pendingMarkerLocation = {
             lat: event.latLng.lat(),
             lng: event.latLng.lng()
@@ -35,10 +69,10 @@ function initMap() {
 
     console.log("Map ready!");
     
-    // Load categories immediately
+    // Carga de categorías iniciales
     fetchCategories();
 
-    // If user is already logged in on map load, fetch markers
+    // Si la sesión del usuario persistía activa al cargar el mapa, renderizar sus marcadores
     if (currentSessionUser) {
         fetchUserMarkers(currentSessionUser.id_usuario);
     }
@@ -48,6 +82,13 @@ window.initMap = initMap;
 // ==========================================
 // API CALLS & MARKER STATE
 // ==========================================
+// ==========================================
+// SERVICIOS API Y LÓGICA DE MARCADORES
+// ==========================================
+
+/**
+ * Obtiene todas las categorías desde la API e inicializa los desplegables de formularios.
+ */
 async function fetchCategories() {
     try {
         const response = await fetch("/api/categorias");
@@ -60,6 +101,9 @@ async function fetchCategories() {
     }
 }
 
+/**
+ * Llenar dinámicamente los selectores dropdown de categoría en modales de creación y edición.
+ */
 function populateCategorySelects() {
     const createSelect = document.getElementById("marker-category");
     const editSelect = document.getElementById("edit-marker-category");
@@ -73,7 +117,12 @@ function populateCategorySelects() {
     if (editSelect) editSelect.innerHTML = html;
 }
 
+/**
+ * Consulta y renderiza en el mapa los marcadores pertenecientes al usuario autenticado.
+ * @param {number} id_usuario ID de base de datos del usuario.
+ */
 async function fetchUserMarkers(id_usuario) {
+    isViewingFriendMap = false; // Asegura que el usuario regrese a su mapa interactivo
     try {
         const response = await fetch(`/api/marcadores?id_usuario=${id_usuario}`);
         if (response.ok) {
@@ -85,6 +134,10 @@ async function fetchUserMarkers(id_usuario) {
     }
 }
 
+/**
+ * Limpia los marcadores del mapa y dibuja nuevos a partir de una lista.
+ * @param {Array} markersData Datos de marcadores obtenidos de la base de datos.
+ */
 function drawMarkersOnMap(markersData) {
     clearMarkersFromMap();
 
@@ -96,9 +149,10 @@ function drawMarkersOnMap(markersData) {
             title: data.titulo
         });
 
-        // Store db data in marker object for easy access
+        // Guardar referencia directa de los datos en el objeto del marcador
         marker.dbData = data;
 
+        // Abrir ventana de edición al hacer clic sobre el marcador
         marker.addListener("click", () => {
             if (!currentSessionUser) return;
             openEditMarkerModal(marker.dbData);
@@ -110,12 +164,18 @@ function drawMarkersOnMap(markersData) {
     updateMarkerCount();
 }
 
+/**
+ * Remueve físicamente todos los marcadores del visor de Google Maps.
+ */
 function clearMarkersFromMap() {
     markersOnMap.forEach(m => m.setMap(null));
     markersOnMap = [];
     updateMarkerCount();
 }
 
+/**
+ * Actualiza la interfaz del contador flotante que indica cuántos marcadores se visualizan.
+ */
 function updateMarkerCount() {
     const countElement = document.getElementById("marker-count");
     if (countElement) {
@@ -126,8 +186,11 @@ function updateMarkerCount() {
 // ==========================================
 // MODAL & SESSION UI LOGIC
 // ==========================================
+// ==========================================
+// LÓGICA DE INTERFAZ, INICIO DE DOM Y MODALES
+// ==========================================
 document.addEventListener("DOMContentLoaded", () => {
-    // --- Elements ---
+    // --- Selección de Elementos del DOM ---
     const navContainer = document.getElementById("nav-container");
 
     const registerModal = document.getElementById("register-modal");
@@ -147,7 +210,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnSubmitEdit = document.getElementById("btn-submit-edit");
     const btnDeleteMarker = document.getElementById("btn-delete-marker");
 
-    // --- Modal Toggles ---
+    // --- Controladores para Abrir Modales ---
+    
+    // Abre el modal para crear un marcador nuevo
     window.openCreateMarkerModal = () => {
         if (createMarkerModal) {
             createMarkerModal.classList.remove("hidden");
@@ -156,12 +221,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // Abre el modal para editar o borrar un marcador existente
     window.openEditMarkerModal = (markerData) => {
         if (editMarkerModal) {
             editMarkerModal.classList.remove("hidden");
             hideFeedback("edit-marker-message");
             
-            // Populate form
+            // Cargar los valores actuales del marcador seleccionado en el formulario
             document.getElementById("edit-marker-id").value = markerData.id_marcador;
             document.getElementById("edit-marker-title").value = markerData.titulo;
             document.getElementById("edit-marker-category").value = markerData.id_categoria;
@@ -169,6 +235,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    // Abre el modal de registro de usuario
     function openRegisterModal() {
         if (registerModal) {
             registerModal.classList.remove("hidden");
@@ -177,6 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Abre el modal de inicio de sesión
     function openLoginModal() {
         if (loginModal) {
             loginModal.classList.remove("hidden");
@@ -187,6 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const friendsModal = document.getElementById("friends-modal");
 
+    // Abre el panel modal de amigos y actualiza las listas pendientes y aceptadas
     function openFriendsModal() {
         if (friendsModal) {
             friendsModal.classList.remove("hidden");
@@ -195,27 +264,36 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Cierra todos los modales de la pantalla y reinicia variables temporales
     function closeAllModals() {
         if (registerModal) registerModal.classList.add("hidden");
         if (loginModal) loginModal.classList.add("hidden");
         if (createMarkerModal) createMarkerModal.classList.add("hidden");
         if (editMarkerModal) editMarkerModal.classList.add("hidden");
         if (friendsModal) friendsModal.classList.add("hidden");
+        const customAlertModal = document.getElementById("custom-alert-modal");
+        if (customAlertModal) customAlertModal.classList.add("hidden");
         pendingMarkerLocation = null;
     }
 
-    // --- Close Modal Listeners ---
+    // --- Escuchadores de eventos para cerrar modales ---
     document.querySelectorAll(".close-btn").forEach(btn => {
         btn.addEventListener("click", closeAllModals);
     });
 
+    const btnCloseAlert = document.getElementById("btn-close-alert");
+    if (btnCloseAlert) {
+        btnCloseAlert.addEventListener("click", closeAllModals);
+    }
+
+    // Cerrar el modal activo si el usuario hace clic en el área oscura exterior
     window.addEventListener("click", (e) => {
         if (e.target.classList.contains("modal-overlay")) {
             closeAllModals();
         }
     });
 
-    // --- Navigation Event Delegation ---
+    // --- Delegación de eventos en el panel de navegación ---
     if (navContainer) {
         navContainer.addEventListener("click", (e) => {
             const btn = e.target.closest("button");
@@ -227,9 +305,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- Forms Handling ---
+    // --- Procesamiento de Formularios de Usuario ---
     
-    // Register
+    // Envío del Formulario de Registro
     if (registerForm) {
         registerForm.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -237,6 +315,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const correo = document.getElementById("reg-correo").value.trim();
             const contrasena = document.getElementById("reg-contrasena").value;
 
+            // Validación del lado del cliente
             if (!nombre || !correo || !contrasena) return showFeedback("register-message", "Por favor, llena todos los campos.", "error");
             if (contrasena.length < 6) return showFeedback("register-message", "La contraseña debe tener al menos 6 caracteres.", "error");
 
@@ -260,7 +339,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Login
+    // Envío del Formulario de Inicio de Sesión
     if (loginForm) {
         loginForm.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -280,11 +359,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     showFeedback("login-message", "¡Inicio de sesión exitoso!", "success");
                     loginForm.reset();
                     
+                    // Almacenar el estado de la sesión localmente
                     localStorage.setItem("currentUser", JSON.stringify(data.usuario));
                     currentSessionUser = data.usuario;
                     updateHeaderUI(data.usuario);
                     
-                    // Fetch markers immediately
+                    // Consultar los marcadores del usuario inmediatamente
                     fetchUserMarkers(currentSessionUser.id_usuario);
                     
                     setTimeout(closeAllModals, 2000);
@@ -297,7 +377,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Create Marker
+    // --- Gestión de Marcadores ---
+    
+    // Envío del Formulario para crear Marcadores
     if (createMarkerForm) {
         createMarkerForm.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -323,7 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await res.json();
                 if (res.ok) {
                     showFeedback("create-marker-message", "¡Marcador guardado!", "success");
-                    fetchUserMarkers(currentSessionUser.id_usuario); // Refresh map
+                    fetchUserMarkers(currentSessionUser.id_usuario); // Refrescar mapa
                     setTimeout(closeAllModals, 1500);
                 } else showFeedback("create-marker-message", data.error, "error");
             } catch (err) {
@@ -334,7 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Edit Marker
+    // Envío del Formulario para actualizar Marcadores
     if (editMarkerForm) {
         editMarkerForm.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -370,7 +452,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Delete Marker
+    // Botón para eliminar un marcador
     if (btnDeleteMarker) {
         btnDeleteMarker.addEventListener("click", async () => {
             if (!currentSessionUser || !confirm("¿Seguro que deseas eliminar este marcador?")) return;
@@ -399,7 +481,9 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // --- Helpers ---
+    // --- Funciones de utilidad auxiliares ---
+
+    // Muestra alertas y mensajes dentro de los formularios (Feedback visual)
     function showFeedback(id, message, type) {
         const el = document.getElementById(id);
         if (!el) return;
@@ -408,11 +492,13 @@ document.addEventListener("DOMContentLoaded", () => {
         el.classList.remove("hidden");
     }
 
+    // Oculta alertas internas en formularios
     function hideFeedback(id) {
         const el = document.getElementById(id);
         if (el) el.classList.add("hidden");
     }
 
+    // Configura el spinner de carga en botones para prevenir clics duplicados
     function setLoading(btn, isLoading, loadText) {
         if (!btn) return;
         const textSpan = btn.querySelector("span");
@@ -425,7 +511,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (textSpan) textSpan.textContent = loadText;
     }
 
-    // --- Session Init ---
+    // --- Control de Sesión Persistente ---
+
+    // Comprueba si hay una sesión almacenada en el LocalStorage
     function checkActiveSession() {
         const cachedUser = localStorage.getItem("currentUser");
         if (cachedUser) {
@@ -444,6 +532,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Cambia la barra superior para mostrar el estado logueado del usuario
     function updateHeaderUI(user) {
         if (navContainer) {
             navContainer.innerHTML = `
@@ -457,6 +546,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Restablece los botones de inicio de sesión si no hay cuenta activa
     function restoreHeaderUI() {
         if (navContainer) {
             navContainer.innerHTML = `
@@ -466,6 +556,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    // Cierra la sesión activa y limpia los marcadores del mapa
     function logoutUser() {
         localStorage.removeItem("currentUser");
         currentSessionUser = null;
@@ -474,10 +565,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // ==========================================
-    // FRIENDS LOGIC
+    // LÓGICA DE SISTEMA SOCIAL (AMIGOS)
     // ==========================================
 
-    // Tab Switching
+    // Navegación interna por pestañas en el panel de amigos (Amigos / Solicitudes / Buscar)
     document.querySelectorAll('.friends-tabs .tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.friends-tabs .tab-btn').forEach(b => b.classList.remove('active'));
@@ -489,7 +580,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // Load Friends
+    // Carga del listado de amigos aceptados
     async function loadFriends() {
         if (!currentSessionUser) return;
         const list = document.getElementById('friends-list');
@@ -514,7 +605,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Load Friend Requests
+    // Carga de solicitudes de amistad pendientes y actualización de badges numéricos
     async function loadFriendRequests() {
         if (!currentSessionUser) return;
         const list = document.getElementById('requests-list');
@@ -548,7 +639,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // Respond to Request
+    // Responder (Aceptar o Rechazar) a solicitudes de amistad
     window.respondRequest = async (id_solicitud, accion) => {
         try {
             const res = await fetch('/api/amigos/responder', {
@@ -557,17 +648,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({ id_solicitud, accion })
             });
             if (res.ok) {
-                alert(accion === 'aceptar' ? 'Solicitud aceptada' : 'Solicitud rechazada');
+                showCustomAlert(accion === 'aceptar' ? 'Solicitud aceptada' : 'Solicitud rechazada');
                 loadFriendRequests();
                 loadFriends();
             }
         } catch (e) {
             console.error(e);
-            alert('Error al procesar solicitud');
+            showCustomAlert('Error al procesar solicitud');
         }
     };
 
-    // Search Users
+    // Buscar usuarios en la red social
     const searchInput = document.getElementById('search-users-input');
     const searchBtn = document.getElementById('btn-search-users');
     if (searchBtn && searchInput) {
@@ -597,7 +688,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Send Friend Request
+    // Enviar solicitud de amistad
     window.sendFriendRequest = async (id_recibe) => {
         try {
             const res = await fetch('/api/amigos/solicitar', {
@@ -606,20 +697,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify({ id_usuario_envia: currentSessionUser.id_usuario, id_usuario_recibe: id_recibe })
             });
             if (res.ok) {
-                alert('Solicitud enviada correctamente');
-                // Refresh search to remove them from list
+                showCustomAlert('Solicitud enviada correctamente');
+                // Forzar refresco de búsqueda para remover al usuario del listado actual
                 if(searchBtn) searchBtn.click();
             } else {
                 const data = await res.json();
-                alert(data.error || 'Error enviando solicitud');
+                showCustomAlert(data.error || 'Error enviando solicitud');
             }
         } catch (e) {
             console.error(e);
-            alert('Error de red enviando solicitud');
+            showCustomAlert('Error de red enviando solicitud');
         }
     };
 
-    // View Friend Map
+    // Visualizar el mapa de un amigo
     window.viewFriendMap = async (id_amigo, nombre_amigo) => {
         closeAllModals();
         const countElement = document.getElementById("marker-count");
@@ -628,24 +719,25 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             const res = await fetch(`/api/amigos/marcadores?id_usuario=${currentSessionUser.id_usuario}&id_amigo=${id_amigo}`);
             if (res.ok) {
+                isViewingFriendMap = true; // Activa el bloqueo de inserción/edición de marcadores
                 const markers = await res.json();
                 
-                // Clear existing markers
+                // Limpiar marcadores propios activos
                 clearMarkersFromMap();
                 
-                // Draw friend markers (different color/style if you like)
+                // Dibujar marcadores del amigo con un marcador de color azul para distinguirlos
                 markers.forEach(data => {
                     const marker = new google.maps.Marker({
                         position: { lat: data.latitud, lng: data.longitud },
                         map: map,
                         animation: google.maps.Animation.DROP,
                         title: data.titulo,
-                        icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' // Distinguish friend markers
+                        icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' // Ícono azul distintivo
                     });
 
-                    // Cannot edit friend's marker
+                    // Clic solo muestra los datos (modo lectura)
                     marker.addListener("click", () => {
-                        alert(`Marcador de ${nombre_amigo}:\n${data.titulo}\n${data.descripcion || ''}`);
+                        showCustomAlert(`Marcador de ${nombre_amigo}:\nTitulo: ${data.titulo}\nDescripción: ${data.descripcion || ''}`);
                     });
 
                     markersOnMap.push(marker);
@@ -655,7 +747,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     countElement.innerText = `Viendo ${markers.length} marcadores de ${nombre_amigo}.`;
                 }
 
-                // Add a button to restore my markers
+                // Generar botón dinámico para regresar a mi mapa propio
                 const panel = document.querySelector(".stats-panel");
                 if (panel && !document.getElementById("btn-restore-map")) {
                     const restoreBtn = document.createElement("button");
@@ -672,14 +764,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
             } else {
-                alert('No se pudieron cargar los marcadores de tu amigo.');
+                showCustomAlert('No se pudieron cargar los marcadores de tu amigo.');
                 fetchUserMarkers(currentSessionUser.id_usuario);
             }
         } catch (e) {
             console.error(e);
-            alert('Error al cargar mapa del amigo.');
+            showCustomAlert('Error al cargar mapa del amigo.');
         }
     };
 
+    // Comprobar la sesión activa al arrancar
     checkActiveSession();
 });
