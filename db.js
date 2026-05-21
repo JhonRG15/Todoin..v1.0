@@ -5,15 +5,8 @@ const config = {
     server: process.env.AZURE_SQL_SERVER,
     database: process.env.AZURE_SQL_DATABASE,
     port: 1433,
-
-    authentication: {
-        type: process.env.AZURE_SQL_AUTHENTICATIONTYPE
-    },
-
-    options: {
-        encrypt: true,
-        trustServerCertificate: false
-    }
+    user: process.env.AZURE_SQL_USER,
+    password: process.env.AZURE_SQL_PASSWORD
 };
 
 const connectDB = async () => {

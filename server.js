@@ -260,6 +260,167 @@ app.delete('/api/marcadores/:id', async (req, res) => {
     }
 });
 
+// --- FRIENDS ENDPOINTS ---
+
+// GET /api/usuarios/buscar
+app.get('/api/usuarios/buscar', async (req, res) => {
+    const { query, id_usuario } = req.query;
+    if (!query || !id_usuario) return res.status(400).json({ error: 'Faltan parámetros' });
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('query', sql.VarChar, `%${query}%`);
+        request.input('id_usuario', sql.Int, id_usuario);
+
+        const result = await request.query(`
+            SELECT id_usuario, nombre, correo 
+            FROM usuarios 
+            WHERE (nombre LIKE @query OR correo LIKE @query)
+              AND id_usuario != @id_usuario
+              AND id_usuario NOT IN (
+                  SELECT id_usuario_recibe FROM amigos WHERE id_usuario_envia = @id_usuario
+                  UNION
+                  SELECT id_usuario_envia FROM amigos WHERE id_usuario_recibe = @id_usuario
+              )
+        `);
+        res.status(200).json(result.recordset);
+    } catch (error) {
+        console.error('Error buscando usuarios:', error);
+        res.status(500).json({ error: 'Error buscando usuarios' });
+    }
+});
+
+// POST /api/amigos/solicitar
+app.post('/api/amigos/solicitar', async (req, res) => {
+    const { id_usuario_envia, id_usuario_recibe } = req.body;
+    if (!id_usuario_envia || !id_usuario_recibe) return res.status(400).json({ error: 'Faltan parámetros' });
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('envia', sql.Int, id_usuario_envia);
+        request.input('recibe', sql.Int, id_usuario_recibe);
+
+        await request.query(`
+            INSERT INTO amigos (id_usuario_envia, id_usuario_recibe, estado)
+            VALUES (@envia, @recibe, 'pendiente')
+        `);
+        res.status(201).json({ message: 'Solicitud enviada' });
+    } catch (error) {
+        console.error('Error enviando solicitud:', error);
+        res.status(500).json({ error: 'Error enviando solicitud' });
+    }
+});
+
+// GET /api/amigos/solicitudes
+app.get('/api/amigos/solicitudes', async (req, res) => {
+    const { id_usuario } = req.query;
+    if (!id_usuario) return res.status(400).json({ error: 'Falta id_usuario' });
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_usuario', sql.Int, id_usuario);
+
+        const result = await request.query(`
+            SELECT a.id_solicitud, a.id_usuario_envia, u.nombre, u.correo, a.fecha_creacion
+            FROM amigos a
+            JOIN usuarios u ON a.id_usuario_envia = u.id_usuario
+            WHERE a.id_usuario_recibe = @id_usuario AND a.estado = 'pendiente'
+        `);
+        res.status(200).json(result.recordset);
+    } catch (error) {
+        console.error('Error obteniendo solicitudes:', error);
+        res.status(500).json({ error: 'Error obteniendo solicitudes' });
+    }
+});
+
+// PUT /api/amigos/responder
+app.put('/api/amigos/responder', async (req, res) => {
+    const { id_solicitud, accion } = req.body; // accion: 'aceptar' o 'rechazar'
+    if (!id_solicitud || !accion) return res.status(400).json({ error: 'Faltan parámetros' });
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_solicitud', sql.Int, id_solicitud);
+
+        if (accion === 'aceptar') {
+            await request.query(`UPDATE amigos SET estado = 'aceptada' WHERE id_solicitud = @id_solicitud`);
+            res.status(200).json({ message: 'Solicitud aceptada' });
+        } else if (accion === 'rechazar') {
+            await request.query(`DELETE FROM amigos WHERE id_solicitud = @id_solicitud`);
+            res.status(200).json({ message: 'Solicitud rechazada' });
+        } else {
+            res.status(400).json({ error: 'Acción no válida' });
+        }
+    } catch (error) {
+        console.error('Error respondiendo solicitud:', error);
+        res.status(500).json({ error: 'Error al responder solicitud' });
+    }
+});
+
+// GET /api/amigos
+app.get('/api/amigos', async (req, res) => {
+    const { id_usuario } = req.query;
+    if (!id_usuario) return res.status(400).json({ error: 'Falta id_usuario' });
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_usuario', sql.Int, id_usuario);
+
+        const result = await request.query(`
+            SELECT u.id_usuario, u.nombre, u.correo
+            FROM amigos a
+            JOIN usuarios u ON 
+                (a.id_usuario_envia = u.id_usuario AND a.id_usuario_recibe = @id_usuario) OR
+                (a.id_usuario_recibe = u.id_usuario AND a.id_usuario_envia = @id_usuario)
+            WHERE a.estado = 'aceptada'
+        `);
+        res.status(200).json(result.recordset);
+    } catch (error) {
+        console.error('Error obteniendo amigos:', error);
+        res.status(500).json({ error: 'Error obteniendo amigos' });
+    }
+});
+
+// GET /api/amigos/marcadores
+app.get('/api/amigos/marcadores', async (req, res) => {
+    const { id_usuario, id_amigo } = req.query;
+    if (!id_usuario || !id_amigo) return res.status(400).json({ error: 'Faltan parámetros' });
+
+    try {
+        const { sql } = require('./db');
+        const request = new sql.Request();
+        request.input('id_usuario', sql.Int, id_usuario);
+        request.input('id_amigo', sql.Int, id_amigo);
+
+        const checkFriend = await request.query(`
+            SELECT 1 FROM amigos 
+            WHERE estado = 'aceptada' AND 
+            ((id_usuario_envia = @id_usuario AND id_usuario_recibe = @id_amigo) OR 
+             (id_usuario_recibe = @id_usuario AND id_usuario_envia = @id_amigo))
+        `);
+
+        if (checkFriend.recordset.length === 0) {
+            return res.status(403).json({ error: 'No tienes permiso para ver estos marcadores' });
+        }
+
+        const result = await request.query(`
+            SELECT m.id_marcador, m.titulo, m.descripcion, m.latitud, m.longitud, m.fecha_creacion, m.id_categoria, c.nombre_categoria, c.icono
+            FROM marcadores m
+            JOIN categorias c ON m.id_categoria = c.id_categoria
+            WHERE m.id_usuario = @id_amigo
+        `);
+        res.status(200).json(result.recordset);
+    } catch (error) {
+        console.error('Error fetching friend markers:', error);
+        res.status(500).json({ error: 'Error fetching markers' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
 });

@@ -163,6 +163,45 @@
         </div>
     </div>
 
+    <!-- Friends Modal -->
+    <div id="friends-modal" class="modal-overlay hidden">
+        <div class="modal-card friends-card">
+            <button id="close-friends-btn" class="close-btn">&times;</button>
+            <div class="modal-header">
+                <h2>Mis Amigos</h2>
+                <p>Busca usuarios, acepta solicitudes y explora los mapas de tus amigos.</p>
+            </div>
+            
+            <div class="friends-tabs">
+                <button class="tab-btn active" data-tab="tab-mis-amigos">Amigos</button>
+                <button class="tab-btn" data-tab="tab-solicitudes">Solicitudes <span id="solicitudes-badge" class="badge hidden">0</span></button>
+                <button class="tab-btn" data-tab="tab-buscar">Buscar</button>
+            </div>
+
+            <div class="tab-content active" id="tab-mis-amigos">
+                <ul id="friends-list" class="user-list">
+                    <!-- Friends loaded here -->
+                </ul>
+            </div>
+
+            <div class="tab-content" id="tab-solicitudes">
+                <ul id="requests-list" class="user-list">
+                    <!-- Requests loaded here -->
+                </ul>
+            </div>
+
+            <div class="tab-content" id="tab-buscar">
+                <div class="search-box">
+                    <input type="text" id="search-users-input" placeholder="Buscar por nombre o correo...">
+                    <button id="btn-search-users" class="btn-primary btn-small">Buscar</button>
+                </div>
+                <ul id="search-results-list" class="user-list">
+                    <!-- Search results loaded here -->
+                </ul>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="mapStyles.js" defer></script>
     <script src="app.js" defer></script>

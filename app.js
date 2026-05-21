@@ -185,11 +185,22 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    const friendsModal = document.getElementById("friends-modal");
+
+    function openFriendsModal() {
+        if (friendsModal) {
+            friendsModal.classList.remove("hidden");
+            loadFriends();
+            loadFriendRequests();
+        }
+    }
+
     function closeAllModals() {
         if (registerModal) registerModal.classList.add("hidden");
         if (loginModal) loginModal.classList.add("hidden");
         if (createMarkerModal) createMarkerModal.classList.add("hidden");
         if (editMarkerModal) editMarkerModal.classList.add("hidden");
+        if (friendsModal) friendsModal.classList.add("hidden");
         pendingMarkerLocation = null;
     }
 
@@ -212,6 +223,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (btn.id === "btn-register") openRegisterModal();
             else if (btn.id === "btn-login") openLoginModal();
             else if (btn.id === "btn-logout") logoutUser();
+            else if (btn.id === "btn-friends") openFriendsModal();
         });
     }
 
@@ -439,6 +451,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="user-avatar">${user.nombre.charAt(0)}</div>
                     <span>Hola, ${user.nombre}</span>
                 </div>
+                <button id="btn-friends" class="btn-secondary">Mis Amigos</button>
                 <button id="btn-logout" class="btn-logout">Cerrar Sesión</button>
             `;
         }
@@ -459,6 +472,214 @@ document.addEventListener("DOMContentLoaded", () => {
         restoreHeaderUI();
         clearMarkersFromMap();
     }
+
+    // ==========================================
+    // FRIENDS LOGIC
+    // ==========================================
+
+    // Tab Switching
+    document.querySelectorAll('.friends-tabs .tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.friends-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.friends-card .tab-content').forEach(c => c.classList.remove('active'));
+            
+            e.target.classList.add('active');
+            const targetTab = e.target.getAttribute('data-tab');
+            document.getElementById(targetTab).classList.add('active');
+        });
+    });
+
+    // Load Friends
+    async function loadFriends() {
+        if (!currentSessionUser) return;
+        const list = document.getElementById('friends-list');
+        list.innerHTML = '<p>Cargando amigos...</p>';
+        try {
+            const res = await fetch(`/api/amigos?id_usuario=${currentSessionUser.id_usuario}`);
+            if (res.ok) {
+                const amigos = await res.json();
+                if (amigos.length === 0) {
+                    list.innerHTML = '<p>Aún no tienes amigos agregados.</p>';
+                } else {
+                    list.innerHTML = amigos.map(a => `
+                        <li>
+                            <span>${a.nombre} (${a.correo})</span>
+                            <button class="btn-primary btn-small" onclick="viewFriendMap(${a.id_usuario}, '${a.nombre}')">Ver Mapa</button>
+                        </li>
+                    `).join('');
+                }
+            }
+        } catch (e) {
+            list.innerHTML = '<p>Error al cargar amigos.</p>';
+        }
+    }
+
+    // Load Friend Requests
+    async function loadFriendRequests() {
+        if (!currentSessionUser) return;
+        const list = document.getElementById('requests-list');
+        const badge = document.getElementById('solicitudes-badge');
+        list.innerHTML = '<p>Cargando solicitudes...</p>';
+        try {
+            const res = await fetch(`/api/amigos/solicitudes?id_usuario=${currentSessionUser.id_usuario}`);
+            if (res.ok) {
+                const reqs = await res.json();
+                if (reqs.length === 0) {
+                    list.innerHTML = '<p>No tienes solicitudes pendientes.</p>';
+                    if (badge) badge.classList.add('hidden');
+                } else {
+                    if (badge) {
+                        badge.textContent = reqs.length;
+                        badge.classList.remove('hidden');
+                    }
+                    list.innerHTML = reqs.map(r => `
+                        <li>
+                            <span>${r.nombre} te envió una solicitud</span>
+                            <div class="action-btns">
+                                <button class="btn-primary btn-small" onclick="respondRequest(${r.id_solicitud}, 'aceptar')">Aceptar</button>
+                                <button class="btn-secondary btn-small" onclick="respondRequest(${r.id_solicitud}, 'rechazar')">Rechazar</button>
+                            </div>
+                        </li>
+                    `).join('');
+                }
+            }
+        } catch (e) {
+            list.innerHTML = '<p>Error al cargar solicitudes.</p>';
+        }
+    }
+
+    // Respond to Request
+    window.respondRequest = async (id_solicitud, accion) => {
+        try {
+            const res = await fetch('/api/amigos/responder', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_solicitud, accion })
+            });
+            if (res.ok) {
+                alert(accion === 'aceptar' ? 'Solicitud aceptada' : 'Solicitud rechazada');
+                loadFriendRequests();
+                loadFriends();
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error al procesar solicitud');
+        }
+    };
+
+    // Search Users
+    const searchInput = document.getElementById('search-users-input');
+    const searchBtn = document.getElementById('btn-search-users');
+    if (searchBtn && searchInput) {
+        searchBtn.addEventListener('click', async () => {
+            const query = searchInput.value.trim();
+            if (!query) return;
+            const list = document.getElementById('search-results-list');
+            list.innerHTML = '<p>Buscando...</p>';
+            try {
+                const res = await fetch(`/api/usuarios/buscar?query=${query}&id_usuario=${currentSessionUser.id_usuario}`);
+                if (res.ok) {
+                    const users = await res.json();
+                    if (users.length === 0) {
+                        list.innerHTML = '<p>No se encontraron usuarios.</p>';
+                    } else {
+                        list.innerHTML = users.map(u => `
+                            <li>
+                                <span>${u.nombre} (${u.correo})</span>
+                                <button class="btn-secondary btn-small" onclick="sendFriendRequest(${u.id_usuario})">Agregar</button>
+                            </li>
+                        `).join('');
+                    }
+                }
+            } catch (e) {
+                list.innerHTML = '<p>Error en la búsqueda.</p>';
+            }
+        });
+    }
+
+    // Send Friend Request
+    window.sendFriendRequest = async (id_recibe) => {
+        try {
+            const res = await fetch('/api/amigos/solicitar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id_usuario_envia: currentSessionUser.id_usuario, id_usuario_recibe: id_recibe })
+            });
+            if (res.ok) {
+                alert('Solicitud enviada correctamente');
+                // Refresh search to remove them from list
+                if(searchBtn) searchBtn.click();
+            } else {
+                const data = await res.json();
+                alert(data.error || 'Error enviando solicitud');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error de red enviando solicitud');
+        }
+    };
+
+    // View Friend Map
+    window.viewFriendMap = async (id_amigo, nombre_amigo) => {
+        closeAllModals();
+        const countElement = document.getElementById("marker-count");
+        if (countElement) countElement.innerText = `Cargando mapa de ${nombre_amigo}...`;
+        
+        try {
+            const res = await fetch(`/api/amigos/marcadores?id_usuario=${currentSessionUser.id_usuario}&id_amigo=${id_amigo}`);
+            if (res.ok) {
+                const markers = await res.json();
+                
+                // Clear existing markers
+                clearMarkersFromMap();
+                
+                // Draw friend markers (different color/style if you like)
+                markers.forEach(data => {
+                    const marker = new google.maps.Marker({
+                        position: { lat: data.latitud, lng: data.longitud },
+                        map: map,
+                        animation: google.maps.Animation.DROP,
+                        title: data.titulo,
+                        icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png' // Distinguish friend markers
+                    });
+
+                    // Cannot edit friend's marker
+                    marker.addListener("click", () => {
+                        alert(`Marcador de ${nombre_amigo}:\n${data.titulo}\n${data.descripcion || ''}`);
+                    });
+
+                    markersOnMap.push(marker);
+                });
+
+                if (countElement) {
+                    countElement.innerText = `Viendo ${markers.length} marcadores de ${nombre_amigo}.`;
+                }
+
+                // Add a button to restore my markers
+                const panel = document.querySelector(".stats-panel");
+                if (panel && !document.getElementById("btn-restore-map")) {
+                    const restoreBtn = document.createElement("button");
+                    restoreBtn.id = "btn-restore-map";
+                    restoreBtn.className = "btn-primary btn-small mt-2";
+                    restoreBtn.style.marginTop = "10px";
+                    restoreBtn.style.width = "100%";
+                    restoreBtn.innerText = "Volver a Mi Mapa";
+                    restoreBtn.onclick = () => {
+                        fetchUserMarkers(currentSessionUser.id_usuario);
+                        restoreBtn.remove();
+                    };
+                    panel.appendChild(restoreBtn);
+                }
+
+            } else {
+                alert('No se pudieron cargar los marcadores de tu amigo.');
+                fetchUserMarkers(currentSessionUser.id_usuario);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Error al cargar mapa del amigo.');
+        }
+    };
 
     checkActiveSession();
 });
